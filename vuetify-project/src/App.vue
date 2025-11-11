@@ -1,177 +1,175 @@
 <template>
-  <v-stage
-    ref="stage"
-    :config="stageSize"
-    @mousedown="handleStageMouseDown"
-    @touchstart="handleStageMouseDown"
-  >
-    <v-layer ref="layer">
-      <v-ellipse
-        v-for="item in ellipses"
-        :key="item.id"
-        :config="{
-          ...item,
-          fill: getFillColor(item.status),
-          opacity: 0.7, // transparência reduzida (mais opaco)
-        }"
-        @transformend="handleTransformEnd"
-        @dblclick="toggleStatus(item)"
-      />
-      <v-transformer
-        ref="transformer"
-        :config="{
-          rotateEnabled: true,
-          keepRatio: keepProportion, // true = círculo, false = elipse livre
-          enabledAnchors: [
-            'top-left',
-            'top-right',
-            'bottom-left',
-            'bottom-right',
-          ],
-          boundBoxFunc: (oldBox, newBox) => {
-            if (newBox.width < 5 || newBox.height < 5) return oldBox;
-            return newBox;
-          },
-        }"
-      />
-    </v-layer>
-  </v-stage>
+  <div>
+    <v-stage
+      ref="stage"
+      :config="stageSize"
+      @mousedown="handleStageMouseDown"
+    >
+      <v-layer ref="layer">
+        <!-- Elipses confirmadas -->
+        <v-ellipse
+          v-for="item in confirmedEllipses"
+          :key="'confirmed-' + item.id"
+          :config="{
+            ...item,
+            opacity: 0.6,
+            stroke: '#2e7d32',
+            strokeWidth: 3,
+            fill: '#4caf50',
+            draggable: false,
+          }"
+        />
 
-  <!-- Controles -->
-  <div
-    style="position: fixed; bottom: 20px; left: 20px; display: flex; gap: 12px"
-  >
-    <button
-      @click="toggleProportion"
+        <!-- Elipse em edição -->
+        <v-ellipse
+          v-if="currentEllipse"
+          :config="{
+            ...currentEllipse,
+            fill: '#2196f3',
+            opacity: 0.5,
+            draggable: true,
+          }"
+          @transformend="handleTransformEnd"
+        />
+
+        <!-- Transformer para a elipse atual -->
+        <v-transformer
+          v-if="currentEllipse"
+          ref="transformer"
+          :config="{
+            rotateEnabled: true,
+            keepRatio: false,
+            enabledAnchors: ['top-left','top-right','bottom-left','bottom-right'],
+          }"
+        />
+      </v-layer>
+    </v-stage>
+
+    <!-- Botão de confirmar -->
+    <div
+      v-if="currentEllipse"
+      style="position: fixed; bottom: 20px; left: 20px;"
+    >
+      <button
+        @click="confirmEllipse"
+        style="padding: 8px 16px; background: #4caf50; color: #fff; border: none; border-radius: 6px;"
+      >
+        Confirmar
+      </button>
+    </div>
+
+    <!-- Modal simples -->
+    <div
+      v-if="showModal"
       style="
-        padding: 8px 14px;
-        background: #1e88e5;
-        color: #fff;
-        border: none;
-        border-radius: 6px;
+        position: fixed;
+        top: 0; left: 0;
+        width: 100vw; height: 100vh;
+        background: rgba(0,0,0,0.5);
+        display: flex; align-items: center; justify-content: center;
       "
     >
-      {{ keepProportion ? "🔓 Modo Elipse Livre" : "🔒 Modo Círculo Travado" }}
-    </button>
+      <div
+        style="
+          background: white;
+          padding: 20px;
+          border-radius: 8px;
+          min-width: 300px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        "
+      >
+        <h3>Descrição</h3>
+        <textarea v-model="currentText" rows="4" style="width: 100%; resize: none;"></textarea>
+        <div style="display:flex; justify-content: flex-end; gap: 10px;">
+          <button @click="cancelModal" style="padding:6px 12px;">Cancelar</button>
+          <button @click="saveModal" style="padding:6px 12px; background:#4caf50; color:white; border:none;">Salvar</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script lang="ts">
-import Konva from "konva";
-const width = window.innerWidth;
-const height = window.innerHeight;
+const width = window.innerWidth
+const height = window.innerHeight
 
 export default {
   data() {
     return {
       stageSize: { width, height },
-      keepProportion: true, // inicia como círculo (proporção travada)
-      ellipses: [
-        {
-          id: 1,
-          name: "ellipse1",
-          x: 200,
-          y: 200,
-          radiusX: 60,
-          radiusY: 60,
-          status: "pendente", // 'pendente' | 'andamento' | 'concluido'
-          draggable: true,
-        },
-      ],
-      selectedShapeName: "",
-      _nextId: 2, // contador simples para novos círculos
-    };
+
+      // apenas uma elipse em edição
+      currentEllipse: null as any | null,
+      confirmedEllipses: [] as any[],
+
+      // modal
+      showModal: false,
+      currentText: '',
+      nextId: 1,
+    }
   },
   methods: {
-    getFillColor(status) {
-      // cores sólidas; a transparência é controlada por "opacity"
-      switch (status) {
-        case "pendente":
-          return "#FFC107"; // amarelo
-        case "andamento":
-          return "#2196F3"; // azul
-        case "concluido":
-          return "#4CAF50"; // verde
-        default:
-          return "#9E9E9E"; // cinza
-      }
-    },
+    handleStageMouseDown(e: any) {
+      // só cria nova se não houver elipse em edição
+      if (this.currentEllipse) return
 
-    toggleProportion() {
-      this.keepProportion = !this.keepProportion;
-    },
-
-    toggleStatus(item) {
-      const next = {
-        pendente: "andamento",
-        andamento: "concluido",
-        concluido: "pendente",
-      };
-      item.status = next[item.status] || "pendente";
-    },
-
-    // Cria um novo círculo/elipse na posição clicada
-    addCircleAt(pointer) {
-      const id = this._nextId++;
-      const name = `ellipse${id}`;
-      const newEl = {
-        id,
-        name,
-        x: pointer.x,
-        y: pointer.y,
-        radiusX: 50, // tamanho padrão
-        radiusY: 50, // igual para começar como círculo
-        status: "pendente",
-        draggable: true,
-      };
-      this.ellipses.push(newEl);
-      // seleciona imediatamente o novo
-      this.selectedShapeName = name;
-      this.$nextTick(this.updateTransformer);
-    },
-
-    handleTransformEnd(e) {
-      const el = this.ellipses.find((r) => r.name === this.selectedShapeName);
-      if (!el) return;
-
-      const node = e.target;
-      el.x = node.x();
-      el.y = node.y();
-      el.rotation = node.rotation();
-      el.radiusX = node.radiusX() * node.scaleX();
-      el.radiusY = node.radiusY() * node.scaleY();
-      node.scaleX(1);
-      node.scaleY(1);
-    },
-
-    handleStageMouseDown(e) {
-      const stage = e.target.getStage();
-
-      // Se clicou no "vazio" do Stage, cria um novo círculo no ponto
+      const stage = e.target.getStage()
       if (e.target === stage) {
-        const pos = stage.getPointerPosition();
-        if (pos) this.addCircleAt(pos);
-        return;
+        const pos = stage.getPointerPosition()
+        if (pos) {
+          this.currentEllipse = {
+            id: this.nextId++,
+            name: `ellipse${this.nextId}`,
+            x: pos.x,
+            y: pos.y,
+            radiusX: 60,
+            radiusY: 60,
+            draggable: true,
+          }
+          this.$nextTick(() => {
+            const transformerNode = this.$refs.transformer?.getNode?.()
+            const shape = stage.findOne(`.${this.currentEllipse.name}`)
+            if (transformerNode && shape) transformerNode.nodes([shape])
+          })
+        }
       }
-
-      // Ignora cliques no transformer
-      const clickedOnTransformer =
-        e.target.getParent().className === "Transformer";
-      if (clickedOnTransformer) return;
-
-      // Seleciona a elipse clicada (se houver)
-      const name = e.target.name();
-      const el = this.ellipses.find((r) => r.name === name);
-      this.selectedShapeName = el ? name : "";
-      this.updateTransformer();
     },
 
-    updateTransformer() {
-      const transformerNode = this.$refs.transformer.getNode();
-      const stage = transformerNode.getStage();
-      const selectedNode = stage.findOne("." + this.selectedShapeName);
-      transformerNode.nodes(selectedNode ? [selectedNode] : []);
+    handleTransformEnd(e: any) {
+      if (!this.currentEllipse) return
+      const node = e.target
+      this.currentEllipse.x = node.x()
+      this.currentEllipse.y = node.y()
+      this.currentEllipse.rotation = node.rotation()
+      this.currentEllipse.radiusX = node.radiusX() * node.scaleX()
+      this.currentEllipse.radiusY = node.radiusY() * node.scaleY()
+      node.scaleX(1)
+      node.scaleY(1)
+    },
+
+    confirmEllipse() {
+      // abre modal
+      this.showModal = true
+      this.currentText = ''
+    },
+
+    cancelModal() {
+      this.showModal = false
+    },
+
+    saveModal() {
+      if (!this.currentEllipse) return
+      // salva elipse como estática
+      this.confirmedEllipses.push({
+        ...this.currentEllipse,
+        text: this.currentText,
+      })
+      // reseta o estado
+      this.currentEllipse = null
+      this.showModal = false
     },
   },
-};
+}
 </script>
