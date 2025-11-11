@@ -15,7 +15,7 @@
           opacity: 0.7, // transparência reduzida (mais opaco)
         }"
         @transformend="handleTransformEnd"
-        @dblclick="toggleStatus(item)"
+        @dblclick="removeEllipse(item)"
       />
       <v-transformer
         ref="transformer"
@@ -108,6 +108,14 @@ export default {
         concluido: "pendente",
       };
       item.status = next[item.status] || "pendente";
+    },
+
+    removeEllipse(item) {
+    this.ellipses = this.ellipses.filter(el => el.id !== item.id);
+      if (this.selectedShapeName === item.name) {
+        this.selectedShapeName = "";
+        this.updateTransformer();
+      }
     },
 
     // Cria um novo círculo/elipse na posição clicada
